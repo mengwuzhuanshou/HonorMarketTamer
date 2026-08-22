@@ -2,6 +2,9 @@
 build/
 dist/
 *.apk
+# prebuilt apks committed for CI auto-release
+!apk/
+!apk/*.apk
 
 # internal handoff notes (contains device serials & personal workflow)
 NOTES.md
