@@ -7,22 +7,22 @@ Pipeline:
   3. dx (dalvik-dx from jadx dist)                 -> build/classes.dex
   4. axml_writer encodes AndroidManifest.xml       -> build/AndroidManifest.xml
   5. zip manifest + dex + assets/xposed_init       -> build/unsigned.apk
-  6. apksig sign (v1+v2+v3, modder.jks)            -> dist/HonorMarketTamer-<ver>.apk
+  6. apksig sign (v1+v2+v3, keystore from env/signing.local) -> dist/HonorMarketTamer-<ver>.apk
 """
 import os
 import subprocess
 import sys
 import zipfile
 
-# 本地工具链路径。默认布局是开发机的 D:\test\tools\...；
-# 其他人构建时用环境变量覆盖（工具与签名密钥不入库，需自备）：
-#   HMT_ROOT      工具根目录（含 jdk21/、jadx147/lib/、modder.jks）
+# 本地工具链路径。默认布局是「仓库同级 tools\」；其他人构建时用环境变量覆盖
+# （工具与签名密钥不入库，需自备）：
+#   HMT_ROOT      工具根目录（含 jdk21/、jadx147/lib/）
 #   HMT_JDK       JDK 根目录（含 bin/javac.exe）
 #   HMT_DX_JAR    dalvik-dx jar
 #   HMT_APKSIG_JAR  apksig jar
-#   HMT_KEYSTORE / HMT_KS_PASS / HMT_KS_ALIAS  签名密钥三件套
-ROOT = os.environ.get("HMT_ROOT", r"D:\test")
+#   HMT_KEYSTORE / HMT_KS_PASS / HMT_KS_ALIAS  签名密钥三件套（或 tools/signing.local）
 PROJ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.environ.get("HMT_ROOT", os.path.dirname(PROJ))
 JDK = os.environ.get("HMT_JDK",
                      os.path.join(ROOT, "tools", "jdk21", "jdk-21.0.12+8"))
 JAVAC = os.path.join(JDK, "bin", "javac.exe")
@@ -31,9 +31,29 @@ DX_JAR = os.environ.get("HMT_DX_JAR", os.path.join(
     ROOT, "tools", "jadx147", "lib", "dalvik-dx-11.0.0_r3.jar"))
 APKSIG_JAR = os.environ.get("HMT_APKSIG_JAR", os.path.join(
     ROOT, "tools", "jadx147", "lib", "apksig-7.4.1.jar"))
-KS = os.environ.get("HMT_KEYSTORE", os.path.join(ROOT, "tools", "modder.jks"))
-KS_PASS = os.environ.get("HMT_KS_PASS", "123456")
-KS_ALIAS = os.environ.get("HMT_KS_ALIAS", "modder")
+# 签名库：优先环境变量，其次 tools/signing.local（gitignored）。
+# 旧 modder.jks 密码已泄露且已废弃，禁止再用；未配置密钥时构建直接失败。
+def _signing_local():
+    try:
+        vals = {}
+        with open(os.path.join(PROJ, "tools", "signing.local"), encoding="utf-8") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    vals[k.strip()] = v.strip()
+        return vals
+    except OSError:
+        return {}
+
+_LOCAL = _signing_local()
+KS = os.environ.get("HMT_KEYSTORE", _LOCAL.get("KS_PATH", ""))
+KS_PASS = os.environ.get("HMT_KS_PASS", _LOCAL.get("KS_PASS", ""))
+KS_ALIAS = os.environ.get("HMT_KS_ALIAS", _LOCAL.get("KS_ALIAS", ""))
+if not (KS and KS_PASS and KS_ALIAS):
+    raise SystemExit(
+        "signing key not configured: set HMT_KEYSTORE/HMT_KS_PASS/HMT_KS_ALIAS or create "
+        "tools/signing.local (KS_PATH= / KS_PASS= / KS_ALIAS=). "
+        "Do NOT reuse the retired modder.jks (its password was leaked).")
 
 BUILD = os.path.join(PROJ, "build")
 DIST = os.path.join(PROJ, "dist")
@@ -42,10 +62,10 @@ APP_SRC = os.path.join(PROJ, "app", "src", "main", "java")
 ASSETS = os.path.join(PROJ, "app", "src", "main", "assets")
 
 PKG = "com.tamer.honormarket"
-VERSION_NAME = "1.3.2"
-VERSION_CODE = 23
+VERSION_NAME = "1.3.3"
+VERSION_CODE = 24
 
-# 应用图标：从荣耀应用市场桌面图标截取（tools/icon/ic_launcher.png）
+# 应用图标：中性购物袋图标（tools/icon/ic_launcher.png，无品牌素材）
 ICON_PNG = os.path.join(PROJ, "tools", "icon", "ic_launcher.png")
 ICON_RES_PATH = "res/drawable/ic_launcher.png"
 
@@ -171,10 +191,10 @@ def main():
               % (info.compress_type, data_off, data_off % 4 == 0))
         assert info.compress_type == 0 and data_off % 4 == 0, "arsc alignment check failed"
 
-    sign_classes = os.path.join(ROOT, "tmp", "sign_classes")
+    sign_classes = os.path.join(BUILD, "sign_classes")
     os.makedirs(sign_classes, exist_ok=True)
     run([JAVAC, "--release", "8", "-nowarn", "-cp", APKSIG_JAR, "-d",
-         sign_classes, os.path.join(ROOT, "scripts", "SignApk.java")],
+         sign_classes, os.path.join(PROJ, "scripts", "SignApk.java")],
         "compile SignApk")
 
     _suffix = "_utf16" if UTF16_FLAG else ""
