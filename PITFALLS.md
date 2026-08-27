@@ -67,13 +67,18 @@ word-split by su quoting — single tokens only.
 
 LSPosed 把模块数据重定向到 apexdata 目录且默认 660 权限，目标进程读不到。
 方案：设置页同时写 ① 自身 files 目录 ② apexdata prefs 同级 ③ root 写
-/data/local/tmp；Hook 侧按 ③→①→②→XSharedPreferences 顺序读，任一可读即生效。
-保存时的 root 请求被拒绝也能工作（还有三重兜底）。
+/data/local/tmp；Hook 侧按 ①→②→③ 顺序读，任一可读即生效（XSharedPreferences 终兜底）。
+拒绝 root 授权同样能工作（①② 不需要 root）。
+**v1.3.4 起把 ③ 降为末位**：③ 只在拿到过 root 时写入且之后不再刷新，排最前会让
+「撤 root 后继续拨开关」的设备读到陈旧配置；①② 随开关实时重写，永远最新。
 
 LSPosed redirects module data to an apexdata dir with mode 660, unreadable by the
 target process. The settings UI writes three copies (own files dir, apexdata
-sibling, /data/local/tmp via root) and the hook side tries them in order with
-XSharedPreferences as the final fallback — denying the root prompt is harmless.
+sibling, /data/local/tmp via root) and the hook side tries them in order
+①→②→③ with XSharedPreferences as the final fallback — denying the root prompt
+is harmless since the first two copies need no root. **Since v1.3.4 the root
+copy ranks LAST**: it is only written while root is granted and never refreshed
+afterwards, so ranking it first would freeze switches on devices that lost root.
 
 ## 8. “请求源头拦截”模式 / Kill-the-request-at-source pattern
 
