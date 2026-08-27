@@ -1,0 +1,12 @@
+# -*- coding: utf-8 -*-
+"""HonorMarketTamer 构建配置（供 tools/module-builder/builder.py 读取）。"""
+MODULE = {
+    "package": "com.tamer.honormarket",
+    "version_name": "1.3.4",
+    "version_code": 25,
+    "app_label": u"荣耀市场净化",
+    "xposed_description": u"荣耀应用市场功能开关：保留搜索与更新，其余功能可屏蔽",
+    "xposed_scope": "com.hihonor.appmarket",
+    "dist_name": "HonorMarketTamer-v%s.apk",
+    "icon_png": "tools/icon/ic_launcher.png",
+}

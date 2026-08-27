@@ -149,11 +149,14 @@ public final class TamerConfig {
         return new TamerConfig(new XspBackedPrefs(xsp));
     }
 
-    /** 候选路径：应用数据目录（LSPosed 重定向后的 bind-mount 视图）+ apexdata 同级 */
+    /**
+     * 候选顺序（v1.3.3 起调整）：自身目录两份由设置页随开关实时重写、永远最新，
+     * 放前面；/data/local/tmp 只有拿过 root 才会被写入且之后不再刷新，
+     * 排最前会让「撤权后继续拨开关」的设备读到陈旧配置，故降级为末位兜底。
+     */
     private static java.util.Map<String, Boolean> readConfFile(
             de.robv.android.xposed.XSharedPreferences xsp) {
         java.util.List<String> candidates = new java.util.ArrayList<String>();
-        candidates.add("/data/local/tmp/" + CONF_NAME);
         candidates.add("/data/user/0/" + MODULE_PKG + "/files/" + CONF_NAME);
         try {
             java.io.File xf = xsp.getFile();
@@ -161,6 +164,7 @@ public final class TamerConfig {
                 candidates.add(new java.io.File(xf.getParentFile(), CONF_NAME).getAbsolutePath());
             }
         } catch (Throwable ignored) {}
+        candidates.add("/data/local/tmp/" + CONF_NAME);
         for (String p : candidates) {
             try {
                 java.io.File f = new java.io.File(p);
