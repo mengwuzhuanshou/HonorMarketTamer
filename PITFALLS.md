@@ -125,3 +125,18 @@ already have been assigned") — assign a non-final local, copy into the final a
 When hand-built binary resources misbehave, don't guess: walk the chunk chain
 with `tools/_validate_arsc.py` and diff key fields against a real vendor arsc via
 `tools/_cmp_arsc.py`. Local validation plus build variants beats install-and-pray.
+
+## 13. 编译桩混入 UTF-8 BOM / UTF-8 BOM in compile stubs
+
+`javac --release 8` 对源文件头部的 UTF-8 BOM（\ufeff）零容忍，报
+"非法字符"且指向整行，第一眼看像语法损坏。共享编译桩曾混入 BOM 导致
+构建全线失败。修法：按字节探三个 BOM 头并剥离；同步副本时顺带自检。
+另：apksig 的 v1 签名 .SF/.RSA 基名取自 SignerConfig 名称（截断到 8 字符），
+跟随 keystore alias 生成即可，别硬编码。
+
+`javac --release 8` rejects a leading UTF-8 BOM in source files with an
+"illegal character" error that reads like broken syntax. A BOM once crept into
+the shared compile stubs and broke the whole build. Fix: detect and strip the
+3-byte BOM bytewise; self-check when syncing copies. Also: apksig derives the
+v1 .SF/.RSA base name from the SignerConfig name (truncated to 8 chars) —
+generate it from the keystore alias instead of hardcoding.

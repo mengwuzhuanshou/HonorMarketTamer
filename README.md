@@ -36,8 +36,9 @@ settings UI carries an English subtitle.
 
 * 已 root 的荣耀/MagicOS 设备：Magisk 或 KernelSU + Zygisk + LSPosed。
   A rooted Honor/MagicOS device: Magisk or KernelSU + Zygisk + LSPosed.
-* 荣耀应用市场 16.1.6.302（实测适配版本）。
-  Honor App Market 16.1.6.302 (the version this module was tested against).
+* 荣耀应用市场 16.1.6.302 / 16.1.7.303（实测适配版本；其它版本类名可能漂移）。
+  Honor App Market 16.1.6.302 / 16.1.7.303 (the versions this module was tested against; other
+  versions may drift).
 
 > 该市场的包经过资源与代码混淆，其他版本的类名可能变化导致功能静默失效；
 > 可在 LSPosed 日志过滤 `HonorMarketTamer` 查看 `armed` 行确认 Hook 是否命中。

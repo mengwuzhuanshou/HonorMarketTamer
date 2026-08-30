@@ -176,8 +176,12 @@ public final class TamerConfig {
                 while ((line = br.readLine()) != null) {
                     int i = line.indexOf('=');
                     if (i <= 0) continue;
+                    // 严格布尔：非 true/false 的值整键跳过、绝不落默认 false——
+                    // 一次传输损坏的副本曾把 master 解析成 false 导致模块整体自灭。
+                    String raw = line.substring(i + 1).trim();
+                    if (!"true".equals(raw) && !"false".equals(raw)) continue;
                     m.put(line.substring(0, i).trim(),
-                          "true".equals(line.substring(i + 1).trim()));
+                          "true".equals(raw));
                 }
                 br.close();
                 if (!m.isEmpty()) return m;
