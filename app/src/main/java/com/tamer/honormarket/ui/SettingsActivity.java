@@ -70,6 +70,7 @@ public class SettingsActivity extends Activity {
         addSwitch(TamerConfig.KEY_OP_FLOAT,   "屏蔽运营悬浮窗", "Block floating promo windows", "页面角落的悬浮推广小窗");
         addSwitch(TamerConfig.KEY_WIDGET_TIP, "屏蔽桌面卡片推广弹窗", "Block widget-promo dialogs", "“添加桌面小组件/卡片”推荐弹窗");
         addSwitch(TamerConfig.KEY_PERS_AD,    "屏蔽个性化推荐广告弹窗", "Block personalized ad dialogs", "个性化广告说明与推荐弹窗");
+        addSwitch(TamerConfig.KEY_TOOLPAGE_ENTRY, "屏蔽工具页活动入口", "Block tool-page activity entries", "应用更新/安装管理等页标题栏的运营活动按钮（如“耀耀农场”树形图标）不再显示");
 
         // ===== 推送与唤醒（默认屏蔽）=====
         section("推送与唤醒", "Push & Wake-up");
@@ -102,6 +103,8 @@ public class SettingsActivity extends Activity {
         addSwitch(TamerConfig.KEY_SEARCH_FEED, "屏蔽搜索发现页推荐", "Block search-page recommendations", "点搜索框进入后的推荐不再展示，请求一并拦截，输入框无需等待");
         addSwitch(TamerConfig.KEY_UPDATE_FEED, "屏蔽更新页“新应用，新用途”", "Hide \"New apps, new uses\" on Updates page", "应用更新页面内嵌的新应用推荐不再展示");
         addSwitch(TamerConfig.KEY_DETAIL_REC,  "屏蔽应用详情页软件推荐", "Hide detail-page recommendations", "移除详情页“应用名＋用户必备的软件推荐”板块");
+        addSwitch(TamerConfig.KEY_SEARCH_AD_BOOTH, "屏蔽搜索结果广告展位", "Block search-result ad booth", "移除搜索结果第一位的广告大卡（带“广告”标签）");
+        addSwitch(TamerConfig.KEY_SEARCH_MUST, "屏蔽搜索页装机必备", "Hide search must-install strip", "移除搜索结果底部的“装机必备”横滑推荐");
 
         addSpace(dp * 20);
         TextView foot = new TextView(this);

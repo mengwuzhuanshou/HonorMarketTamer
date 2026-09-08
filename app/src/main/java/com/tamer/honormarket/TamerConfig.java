@@ -22,6 +22,7 @@ public final class TamerConfig {
     public static final String KEY_OP_FLOAT    = "block_operation_float";  // 运营悬浮窗
     public static final String KEY_WIDGET_TIP  = "block_widget_promote";   // 桌面卡片推广弹窗
     public static final String KEY_PERS_AD     = "block_personalized_ads"; // 个性化广告弹窗
+    public static final String KEY_TOOLPAGE_ENTRY = "block_toolpage_activity_entry"; // 工具页标题栏运营活动入口(树形按钮)
 
     // ===== 推送与唤醒（默认屏蔽）=====
     public static final String KEY_PUSH        = "block_push";             // 推送通知
@@ -52,6 +53,8 @@ public final class TamerConfig {
     public static final String KEY_SEARCH_FEED = "block_search_feed";  // 搜索发现页应用推荐（含请求源头拦截）
     public static final String KEY_UPDATE_FEED = "block_update_recommend"; // 更新页“新应用，新用途”推荐
     public static final String KEY_DETAIL_REC  = "block_detail_recommend"; // 应用详情页「应用名+用户必备的软件推荐」
+    public static final String KEY_SEARCH_AD_BOOTH = "block_search_ad_booth";   // 搜索结果页广告展位大卡
+    public static final String KEY_SEARCH_MUST = "block_search_must_install";   // 搜索结果页「装机必备」横滑
 
     // ===== “我的”页内板块（默认不屏蔽）=====
     public static final String KEY_MINE_SLIDE    = "mine_block_slide";    // 滑一滑发现更多精彩
@@ -63,12 +66,12 @@ public final class TamerConfig {
     /** 全部开关键（设置页序列化用）——Tab 类仅保留 应用/抢鲜/游戏 */
     public static final String[] ALL_KEYS = {
         KEY_MASTER, KEY_SPLASH_AD, KEY_OP_DIALOG, KEY_OP_FLOAT, KEY_WIDGET_TIP,
-        KEY_PERS_AD, KEY_PUSH, KEY_WAKE, KEY_SILENT_UPD, KEY_UPDATE_NOTIFY,
+        KEY_PERS_AD, KEY_TOOLPAGE_ENTRY, KEY_PUSH, KEY_WAKE, KEY_SILENT_UPD, KEY_UPDATE_NOTIFY,
         KEY_ALL_NOTIFY, KEY_GAME_TAB, KEY_QIANGXIAN_TAB, KEY_APPS_TAB,
         KEY_HOME_ROLLWORD,
         KEY_MINE_SIGNIN, KEY_MINE_SAFETY, KEY_MINE_CLEAN, KEY_MINE_SERVICES,
         KEY_MINE_SLIDE, KEY_MINE_FEED, KEY_SEARCH_FEED, KEY_UPDATE_FEED,
-        KEY_DETAIL_REC,
+        KEY_DETAIL_REC, KEY_SEARCH_AD_BOOTH, KEY_SEARCH_MUST,
     };
 
     /** 各页面开关对应的 Activity 类名列表 */
@@ -127,12 +130,15 @@ public final class TamerConfig {
             case KEY_OP_FLOAT:
             case KEY_WIDGET_TIP:
             case KEY_PERS_AD:
+            case KEY_TOOLPAGE_ENTRY:
             case KEY_PUSH:
             case KEY_WAKE:
             case KEY_MINE_FEED:
             case KEY_SEARCH_FEED:
             case KEY_UPDATE_FEED:
             case KEY_DETAIL_REC:
+            case KEY_SEARCH_AD_BOOTH:
+            case KEY_SEARCH_MUST:
                 return true;
             default:
                 return false;

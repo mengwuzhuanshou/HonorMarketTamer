@@ -64,6 +64,10 @@ public final class RecommendFeedBlocker {
             "com.hihonor.appmarket.app.details.activity.AppDetailsActivity$requestMiddle$1$1";
 
     private static final AtomicInteger sReqBlocked = new AtomicInteger();
+    /** 16.1.8.301 起：真实请求核心 n(...) 的命中计数 */
+    private static final AtomicInteger sReqCoreBlocked = new AtomicInteger();
+    /** 16.1.8.301 起：响应汇聚点 W1(...) 的命中计数 */
+    private static final AtomicInteger sW1Hit = new AtomicInteger();
     private static final AtomicInteger sSearchBlocked = new AtomicInteger();
     private static final AtomicInteger sSearchSrcBlocked = new AtomicInteger();
     private static final AtomicInteger sDetailRecBlocked = new AtomicInteger();
@@ -88,8 +92,10 @@ public final class RecommendFeedBlocker {
         sUpdateFeed = cfg.get(com.tamer.honormarket.TamerConfig.KEY_UPDATE_FEED, true);
         sDetailRec  = cfg.get(com.tamer.honormarket.TamerConfig.KEY_DETAIL_REC, true);
         if (sMineFeed) {
-            hookMineReq(cl);
-            hookMine(cl);
+            hookMineReq(cl);       // 老：o(...) 请求桥（16.1.8 起已降级为合成桥，保留双保险）
+            hookMineReqCore(cl);   // 新：n(...) 真实请求核心（16.1.8.301 R232 唯一网络出口）
+            hookMine(cl);          // 老：V1(resp,z,z2,z3) 缓存路径（16.1.8 起已改名 W1，保留存档）
+            hookMineResp(cl);      // 新：W1(BaseResp,z,z2,z3) 响应汇聚点（网络+缓存双路收口）
         }
         if (sSearchFeed) {
             hookSearchSource(cl);
@@ -129,6 +135,125 @@ public final class RecommendFeedBlocker {
             XposedBridge.log(TAG + "RecommendFeedBlocker armed on MarketManageViewModel#o");
         } catch (Throwable t) {
             XposedBridge.log(TAG + "RecommendFeedBlocker mine-vm FAILED: " + t);
+        }
+    }
+
+    /**
+     * 【16.1.8.301 适配】「我的」页真实请求核心：MarketManageViewModel#n(MutableLiveData,int,String,boolean)。
+     *
+     * 16.1.8 起服务端/客户端把 realRequestRecommend 的出口从 o(...) 挪到 n(...)：
+     *  - o(...) 降级为 Kotlin default-args 合成桥 static synthetic o(VM,LiveData,int,int)，只转调 n；
+     *  - 首屏 t("R232") / 刷新 q(...) 经桥进 n，但上滑加载更多 s(offset,"51") 在 str!=null 时
+     *    【直接调 n(...)"51"】，完全绕过老 o 钩子 → 老钩子只杀桥、拦不住无限 load-more，
+     *    于是「我的」页底部豆包/百度单行应用推荐流（single_line_recommend_root）复活且可无限滚动。
+     *
+     * n(...) 是首屏/刷新/加载更多三条路径共用的唯一网络出口（内部 new MultiAssemblyDataReq
+     * setRecommendCode("R232") 后 BaseViewModel.request 发请求）。before-hook setResult(null)
+     * → 请求零流量、协程不启动、无响应 → 下游 RecommendAdapter 无数据可绑，feed 整段不渲染。
+     * 与老 o 钩子同形态（都只 setResult(null)、不改返回值结构），幂等、无回调、不死循环。
+     */
+    private static void hookMineReqCore(final ClassLoader cl) {
+        try {
+            Class<?> vm = XposedHelpers.findClass(MINE_VM, cl);
+            XposedBridge.hookAllMethods(vm, "n", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    try {
+                        // n(MutableLiveData, int offset, String reqSrc, boolean) = 4 参
+                        if (param.args.length == 4) {
+                            param.setResult(null);
+                            int n = sReqCoreBlocked.incrementAndGet();
+                            if (n <= 10 || n % 50 == 0) {
+                                XposedBridge.log(TAG + "mine-feed req-core killed #" + n);
+                            }
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + "mine-feed req-core err: " + t);
+                    }
+                }
+            });
+            XposedBridge.log(TAG + "RecommendFeedBlocker armed on MarketManageViewModel#n (req core)");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + "RecommendFeedBlocker mine-req-core FAILED: " + t);
+        }
+    }
+
+    /**
+     * 【16.1.8.301 适配】「我的」页推荐响应汇聚点：
+     * MarketManageFragment#W1(BaseResp,boolean,boolean,boolean)（原名 V1，16.1.8 改名）。
+     *
+     * 网络响应（observer → handleRecommendResponse → W1(resp,true,z,true)）与
+     * 缓存路径（loadCacheRecommendData → MineModuleKt.z().b("R232") 读 R232 缓存
+     * → W1(cached,false,false,false)）【都汇聚到 W1】，内部经 Y1 → N1 把
+     * BaseResp.getData().getAssemblyList() 喂进 RecommendAdapter。
+     *
+     * 老钩子锚的 V1(resp,z,z2,z3) 在 16.1.8 已不存在（V1 只剩 V1(int)），故缓存里的
+     * 豆包/百度旧行仍会先渲染出来。
+     *
+     * 关键手法——【置空数据而非吞响应】（沿用本项目坑 #9 哲学：推荐流拦截统一"置空响应
+     * 数据"而非拦方法返回，让 App 自己走无数据清理路径，不留悬空加载/错误态）：
+     *  - 把 args[0](BaseResp) 换成一个 errorCode=0、data=空 assemblyList 的【成功空响应】，
+     *    使 Y1 走 "assemblyList2.isEmpty() → arrayListD=null" 的空数据分支，feed 整段干净
+     *    收起；若直接置 null 会落进 App 的 error 分支，残留"加载失败，点击重试"占位——不可取。
+     *  - 不再补调 M1()：16.1.8 起 M1()=f1(null)/Z0()，喂 null 反而把适配器打进 error 态，
+     *    正是"加载失败"的元凶；空成功响应已让 App 自行收尾，无需补刀。
+     * before-hook 只替换入参、不改控制流，幂等、无回调、不死循环。
+     */
+    private static void hookMineResp(final ClassLoader cl) {
+        try {
+            Class<?> clazz = XposedHelpers.findClass(MINE_FRAG, cl);
+            XposedBridge.hookAllMethods(clazz, "W1", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    try {
+                        // W1(BaseResp, boolean, boolean, boolean) = 4 参
+                        if (param.args.length != 4) {
+                            return;
+                        }
+                        Object empty = emptySuccessResp(cl);
+                        if (empty == null) {
+                            // 构造失败兜底：置 null（至少不出数据），error 态由空态扫描兜底
+                            param.args[0] = null;
+                        } else {
+                            param.args[0] = empty;
+                        }
+                        int n = sW1Hit.incrementAndGet();
+                        if (n <= 10 || n % 100 == 0) {
+                            XposedBridge.log(TAG + "mine-feed W1 resp->empty #" + n);
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + "mine-feed W1 err: " + t);
+                    }
+                }
+            });
+            XposedBridge.log(TAG + "RecommendFeedBlocker armed on MarketManageFragment#W1 (resp sink)");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + "RecommendFeedBlocker mine-resp FAILED: " + t);
+        }
+    }
+
+    /**
+     * 构造空数据的成功响应：BaseResp{errorCode=0, data=MultiAssemblyDataResp{空 assemblyList}}。
+     * 与 App 自身"请求成功但无推荐内容"的响应同形态，供 W1 走空数据分支。
+     */
+    private static Object emptySuccessResp(ClassLoader cl) {
+        try {
+            Class<?> respCls = XposedHelpers.findClass(
+                    "com.hihonor.appmarket.network.base.BaseResp", cl);
+            Class<?> dataCls = XposedHelpers.findClass(
+                    "com.hihonor.appmarket.network.response.MultiAssemblyDataResp", cl);
+            Object data = dataCls.newInstance();
+            java.util.List<Object> emptyList = new java.util.ArrayList<Object>();
+            XposedHelpers.callMethod(data, "setAssemblyList", emptyList);
+            XposedHelpers.callMethod(data, "setAssemblyNewList", emptyList);
+            XposedHelpers.callMethod(data, "setAssemblyOffset", Integer.valueOf(0));
+            Object resp = respCls.newInstance();
+            XposedHelpers.callMethod(resp, "setErrorCode", Integer.valueOf(0));
+            XposedHelpers.callMethod(resp, "setData", data);
+            return resp;
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + "mine empty-resp build err: " + t);
+            return null;
         }
     }
 

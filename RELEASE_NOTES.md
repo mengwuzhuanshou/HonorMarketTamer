@@ -1,37 +1,33 @@
-Release v1.3.6（versionCode 27）
+Release v1.3.9（versionCode 30）
 
 ⚠ AI-generated module / 本模块由 AI 生成，代码未经人工长期审计，请自行评估风险。
 
 ## 更新内容 / What's new
 
-- **开屏广告适配市场 16.1.7.303**：市场自升级后开屏广告屏蔽失效，
-  根因是 V3 实时链路（AB request_splash=1）绕过旧缓存锚点、且旧钩子的
-  continuation 判定恒不匹配、广告视图工厂混淆名漂移。现补三点拦截：
-  V3 数据入口、缓存数据入口（含预取分支）、新视图工厂；同时原四点
-  锚点全部保留，老版本市场继续可用。
-  Splash-ad blocking adapted to market 16.1.7.303: the V3 realtime path
-  (AB request_splash=1) bypassed the old cached anchor, the legacy hook's
-  continuation check never matched, and the ad view factory moved to a new
-  obfuscated name. Three new anchors cover the V3 data entry, the cached
-  data entry (incl. the prefetch branch) and the new view factory, while
-  all four legacy anchors are kept for older market versions.
-- **配置解析严格布尔**：配置副本中出现非 true/false 的损坏值时整键跳过，
-  不再误判为 false——此前一次传输损坏可能把总开关解析成 false 导致
-  模块整体静默失效。
-  Strict boolean parsing: corrupted non-boolean values in a config copy are
-  skipped per key instead of being read as false — a damaged copy could
-  previously turn the master switch off and silently disable the module.
-- **签名文件名跟随密钥别名**：v1 JAR 签名的 .SF/.RSA 基名不再固定，
-  改由 keystore alias 生成（当前密钥下为 HONORMAR）。
-  The v1 JAR signature base name (.SF/.RSA) now derives from the keystore
-  alias instead of a fixed string (HONORMAR with the current key).
+- **「我的」页推荐流适配市场 16.1.8.301**：市场自升级后「我的」页底部
+  应用推荐流复活——真实请求核心漂移为新的混淆名（上拉加载直接调用、绕过旧
+  钩子），响应汇聚方法也改名。新增请求核心拦截 + 空成功响应收口两个钩子；
+  旧锚点全部保留，老版本市场继续可用。
+  Mine-page feed re-adapted for market 16.1.8.301: the feed returned after a
+  market self-upgrade because the real request core moved to a new obfuscated
+  name (load-more calls it directly, bypassing the legacy hook) and the
+  response sink was renamed. Two new hooks intercept the request core and
+  settle the response with an empty success; all legacy anchors are kept.
+- **搜索结果页净化**：屏蔽结果首位的广告展位大卡与底部「装机必备」横滑
+  推荐区块（新开关：屏蔽搜索结果广告展位 / 屏蔽搜索页装机必备）。在装配
+  适配器的数据入口按条目类型与标题过滤，正常搜索结果与加载更多不受影响。
+  Search-result cleanup: the first-position ad booth card and the bottom
+  "Must-install" strip are now removed (two new switches). Filtering happens
+  at the assembly adapter's data entries by item type and section title;
+  organic results and load-more keep working.
+- **工具页运营活动入口屏蔽**：应用更新、安装管理、安装记录、卸载管理、
+  清理加速、安全检测六个页面标题栏的运营活动按钮（如"耀耀农场"树形图标）
+  不再显示（新开关：屏蔽工具页活动入口）。活动 H5 页面本身不受影响——
+  入口消失后自然无法进入。
+  Tool-page activity entries hidden: the promo buttons in the title bars of
+  six tool pages (Updates, Install Manager, Install Record, Uninstall,
+  Cleaner, Security Check) — e.g. the tree-shaped "Farm" icon — no longer
+  show (one new switch). The H5 pages themselves are untouched; with the
+  entry gone they are simply unreachable.
 - 与 v1.3.3+ 同签名密钥，可直接覆盖安装，无需卸载。
   Same signing key as v1.3.3+ — install over the old one directly.
-
-## 环境要求 / Requirements
-
-- 已 root + Zygisk + LSPosed / rooted device with Zygisk + LSPosed
-- 荣耀应用市场 16.1.6.302 / 16.1.7.303 / Honor App Market 16.1.6.302 / 16.1.7.303
-
-安装后请在 LSPosed 勾选作用域「荣耀应用市场」并强制停止市场后重开。
-After install, select the market in the module scope list, then force-stop and reopen the market.

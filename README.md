@@ -27,18 +27,20 @@ feature is an independent switch you can toggle on or off at any time.
 | 页面 Pages | 底部「游戏/应用/抢鲜」页签 / Bottom tabs: Games / Apps / Early-Access |
 | 「我的」页 Mine page | 签到、安全检测、清理加速、常用服务、滑动横幅卡片 / Check-in, security scan, cleaner, services, swipe banner cards |
 | 搜索 Search | 搜索框滚动热词横幅 / Rolling hot-word banner in the search box |
+| 搜索 Search | 搜索结果首位广告展位大卡、底部「装机必备」横滑 / First-position ad booth card & "Must-install" strip in search results |
+| 广告 Ads | 工具页标题栏运营活动入口（应用更新/安装管理等，如"耀耀农场"树形图标）/ Tool-page header activity entries (Updates, Install Manager, …) |
 
-共 23 个开关，默认配置即推荐配置。设置页每个选项均附英文说明。
-23 switches in total; defaults are the recommended set. Every option in the
+共 26 个开关，默认配置即推荐配置。设置页每个选项均附英文说明。
+26 switches in total; defaults are the recommended set. Every option in the
 settings UI carries an English subtitle.
 
 ## 环境要求 / Requirements
 
 * 已 root 的荣耀/MagicOS 设备：Magisk 或 KernelSU + Zygisk + LSPosed。
   A rooted Honor/MagicOS device: Magisk or KernelSU + Zygisk + LSPosed.
-* 荣耀应用市场 16.1.6.302 / 16.1.7.303（实测适配版本；其它版本类名可能漂移）。
-  Honor App Market 16.1.6.302 / 16.1.7.303 (the versions this module was tested against; other
-  versions may drift).
+* 荣耀应用市场 16.1.6.302 / 16.1.7.303 / 16.1.8.301（实测适配版本；其它版本类名可能漂移）。
+  Honor App Market 16.1.6.302 / 16.1.7.303 / 16.1.8.301 (the versions this module was tested
+  against; other versions may drift).
 
 > 该市场的包经过资源与代码混淆，其他版本的类名可能变化导致功能静默失效；
 > 可在 LSPosed 日志过滤 `HonorMarketTamer` 查看 `armed` 行确认 Hook 是否命中。

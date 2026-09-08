@@ -140,3 +140,33 @@ the shared compile stubs and broke the whole build. Fix: detect and strip the
 3-byte BOM bytewise; self-check when syncing copies. Also: apksig derives the
 v1 .SF/.RSA base name from the SignerConfig name (truncated to 8 chars) —
 generate it from the keystore alias instead of hardcoding.
+
+## 14. 混淆版本漂移：按名钩子静默失效 / Silent hook misses after obfuscated-symbol drift
+
+市场自升级会把混淆符号整体改名（真实请求核心、响应汇聚方法都换过名），按固定名
+`hookAllMethods` 注册"成功"但永不触发——不报错、无日志，功能静默复活。铁律：
+每个钩子装载后打 `armed` 日志，功能页实测命中计数（`killed #N` / `removed #N`）；
+适配新版本先反编译新 APK 复核每个锚点，旧锚点保留作老版本存档。
+
+Market self-upgrades rename obfuscated symbols wholesale (both the real request
+core and the response sink moved). `hookAllMethods` on a stale name "succeeds"
+but never fires — no error, no log, the feature silently returns. Rules: log an
+`armed` line for every hook, verify hit counters on the live page, decompile the
+new APK to re-check each anchor when adapting, and keep legacy anchors for
+older market versions.
+
+## 15. 构建脚本与 jadx 的两个工具坑 / Two toolchain traps (build script & jadx)
+
+构建脚本用 `subprocess.run(..., text=True)`（按 UTF-8）读 javac 输出，中文 Windows
+控制台下 javac 输出 GBK → `UnicodeDecodeError` 且 stderr 变 None，把真实编译错误
+盖住。构建入口固定 `PYTHONUTF8=0` 或显式 `encoding=, errors=`。另：jadx fat jar 用
+`java -jar` 启动的是 GUI（其 Main-Class），无头环境必须
+`java -cp jadx-*.jar jadx.cli.JadxCLI`，定点反编译加 `--single-class`。
+
+A build script reading javac output with `subprocess.run(..., text=True)` (UTF-8)
+crashes with `UnicodeDecodeError` on a GBK Chinese-Windows console, and stderr
+becomes None, masking the real compiler message. Pin `PYTHONUTF8=0` (or pass
+explicit encoding/errors). Also: `java -jar` on the jadx fat jar launches the GUI
+(that is its Main-Class); run headless with
+`java -cp jadx-*.jar jadx.cli.JadxCLI` and use `--single-class` for surgical
+decompiles.

@@ -6,8 +6,10 @@ import com.tamer.honormarket.hooks.MineSectionBlocker;
 import com.tamer.honormarket.hooks.PushBlocker;
 import com.tamer.honormarket.hooks.RecommendFeedBlocker;
 import com.tamer.honormarket.hooks.RollWordBlocker;
+import com.tamer.honormarket.hooks.SearchAdBlocker;
 import com.tamer.honormarket.hooks.SplashAdBlocker;
 import com.tamer.honormarket.hooks.TabStripper;
+import com.tamer.honormarket.hooks.ToolPageEntryBlocker;
 import com.tamer.honormarket.hooks.WakeBlocker;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -54,7 +56,10 @@ public class MainHook implements IXposedHookLoadPackage {
                 + " slide=" + cfg.get(TamerConfig.KEY_MINE_SLIDE, false) + "]"
                 + " feed[mine=" + cfg.get(TamerConfig.KEY_MINE_FEED, true)
                 + " search=" + cfg.get(TamerConfig.KEY_SEARCH_FEED, true)
-                + " update=" + cfg.get(TamerConfig.KEY_UPDATE_FEED, true) + "]");
+                + " update=" + cfg.get(TamerConfig.KEY_UPDATE_FEED, true) + "]"
+                + " sad[booth=" + cfg.get(TamerConfig.KEY_SEARCH_AD_BOOTH, true)
+                + " must=" + cfg.get(TamerConfig.KEY_SEARCH_MUST, true) + "]"
+                + " toolpage=" + cfg.get(TamerConfig.KEY_TOOLPAGE_ENTRY, true));
 
         if (!cfg.get(TamerConfig.KEY_MASTER, true)) {
             XposedBridge.log("[HonorMarketTamer] 模块已通过总开关禁用");
@@ -77,6 +82,8 @@ public class MainHook implements IXposedHookLoadPackage {
         safe("MineSectionBlocker", new Thunk() { public void run() { MineSectionBlocker.hook(lppFinal.classLoader, cfgFinal); } });
         safe("RollWordBlocker",    new Thunk() { public void run() { RollWordBlocker.hook(lppFinal.classLoader, cfgFinal); } });
         safe("RecommendFeedBlocker", new Thunk() { public void run() { RecommendFeedBlocker.hook(lppFinal.classLoader, cfgFinal); } });
+        safe("SearchAdBlocker", new Thunk() { public void run() { SearchAdBlocker.hook(lppFinal.classLoader, cfgFinal); } });
+        safe("ToolPageEntryBlocker", new Thunk() { public void run() { ToolPageEntryBlocker.hook(lppFinal.classLoader, cfgFinal); } });
     }
 
     interface Thunk { void run() throws Throwable; }
