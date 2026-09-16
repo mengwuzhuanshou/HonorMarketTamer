@@ -12,6 +12,9 @@ public interface SharedPreferences {
     float getFloat(String key, float defValue);
     boolean getBoolean(String key, boolean defValue);
     boolean contains(String key);
+    /** API 27+：返回 SP 文件的真实物理路径（LSPosed v2 apexdata 重定向下
+     *  指向 apexdata 内路径，而非 getFilesDir() 报的常规目录）。 */
+    java.io.File getFilePath();
     Editor edit();
     void registerOnSharedPreferenceChangeListener(OnSharedPreferenceChangeListener listener);
     void unregisterOnSharedPreferenceChangeListener(OnSharedPreferenceChangeListener listener);

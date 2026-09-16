@@ -88,11 +88,21 @@ public final class PushBlocker {
         if (cfg.get(com.tamer.honormarket.TamerConfig.KEY_MSG_CENTER,
                     com.tamer.honormarket.TamerConfig.defaultValueOf(
                             com.tamer.honormarket.TamerConfig.KEY_MSG_CENTER))) {
+            // 16.1.7 及以前锚点（305 已改名/改类，留档无害）
             HookUtil.tryHookFlex(cl, "tp5", "e", 1, HookUtilNull.get());
             HookUtil.tryHookFlex(cl, "tp5", "g", 1, HookUtilNull.get());
             HookUtil.tryHookFlex(cl, "rk4", "l", 1, HookUtilNull.get());
             HookUtil.tryHookFlex(cl, "com.hihonor.appmarket.msgcenterview.MsgGroupViewModel",
                     "l", 1, HookUtilNull.get());
+            // 16.1.8.305 适配：NormalMsgRepository 由 tp5 改名为 v56（方法名 e/g 未变，
+            // 未读计数列表/第3组计数两个静态 setter），InteractionMsgRepository 由 rk4
+            // 迁到 msgcenterview.repository.a 且 l(1) 改造成挂起函数 y(2)。
+            HookUtil.tryHookFlex(cl, "v56", "e", 1, HookUtilNull.get());
+            HookUtil.tryHookFlex(cl, "v56", "g", 1, HookUtilNull.get());
+            HookUtil.tryHookFlex(cl, "com.hihonor.appmarket.msgcenterview.repository.a",
+                    "y", 2, HookUtilNull.get());
+            HookUtil.tryHookFlex(cl, "com.hihonor.appmarket.msgcenterview.MsgGroupViewModel",
+                    "k", 1, HookUtilNull.get());
         }
 
         // 更新提醒通知（默认保留）

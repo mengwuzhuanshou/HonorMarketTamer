@@ -10,8 +10,37 @@ public final class TamerConfig {
     public static final String MODULE_PKG = "com.tamer.honormarket";
     public static final String PREFS_NAME = "tamer_config";
     public static final String TARGET_PKG = "com.hihonor.appmarket";
+    /** 市场 launcher（resolve-activity 实测：com.hihonor.appmarket/.module.splash.Splash）。
+     *  显式 ComponentName 启动（SettingsActivity）与投递钩子（ConfigRelay）共用。 */
+    public static final String LAUNCHER_CLASS = "com.hihonor.appmarket.module.splash.Splash";
+    /** 市场主 Activity（warm 投递落点，照抄 LineTamer 双钩子）：市场已运行时
+     *  带 conf 再次拉起，系统把新 Intent 交给已存在的 MainActivity（onNewIntent），
+     *  而非重建 Splash。挂 onCreate+onNewIntent 兜住 warm 路径。冷启动时其
+     *  getIntent() 无 extras（Splash 不转发），deliver 自然 no-op，无害。 */
+    public static final String MAIN_ACTIVITY_CLASS =
+            "com.hihonor.appmarket.module.main.MainActivity";
+    /** 健康类目标应用（传感器闸门默认作用对象） */
+    public static final String HEALTH_PKG = "com.hihonor.health";
+    /** health_packages 未配置时的兜底包名列表（逗号分隔） */
+    public static final String DEFAULT_HEALTH_PACKAGES = "com.hihonor.health";
     /** 自管配置文件（POSIX 644，Hook 端兜底读取） */
     public static final String CONF_NAME = "tamer_config.conf";
+    /** 宿主侧 conf（无 root 主链路，LineTamer v1.6.1 模式）：写在目标应用自己
+     *  files/ 下（HOST_CONF_DIR），钩子进程在目标进程内必然可读，读序最优先。
+     *  由 ConfigRelay 从启动 Intent extras 重建（规范化行格式，带 #gen 代次）。 */
+    public static final String HOST_CONF_NAME = "hmt_host.conf";
+    public static final String HOST_CONF_DIR = "/data/user/0/" + TARGET_PKG + "/files";
+
+    // ===== 启动 Intent extras 键（设置页保存 → 市场 Splash.onCreate 截获）=====
+    public static final String EXTRA_CONF = "hmt_conf";
+    public static final String EXTRA_GEN  = "hmt_gen";
+    /** 代次戳：SP long 键（不序列化进布尔 conf 文件），每次保存刷新 */
+    public static final String KEY_CONF_GEN = "conf_gen";
+
+    /** 读 SP 里的配置代次（设置页每次保存时刷新） */
+    public static long confGen(android.content.SharedPreferences sp) {
+        try { return sp.getLong(KEY_CONF_GEN, 0L); } catch (Throwable t) { return 0L; }
+    }
 
     // ===== 总开关 =====
     public static final String KEY_MASTER = "master_enabled"; // 模块总开关
@@ -63,6 +92,10 @@ public final class TamerConfig {
     public static final String KEY_MINE_SERVICES = "mine_block_services"; // 常用服务板块
     public static final String KEY_MINE_SIGNIN   = "mine_block_signin";   // 签到领奖入口
 
+    // ===== 健康类应用（默认关；在目标健康进程内生效）=====
+    public static final String KEY_HEALTH_GATE     = "health_sensor_gate"; // 传感器闸门：熄屏拒注册/注销，亮屏重放
+    public static final String KEY_HEALTH_PACKAGES = "health_packages";    // 闸门作用包名（逗号分隔，字符串键）
+
     /** 全部开关键（设置页序列化用）——Tab 类仅保留 应用/抢鲜/游戏 */
     public static final String[] ALL_KEYS = {
         KEY_MASTER, KEY_SPLASH_AD, KEY_OP_DIALOG, KEY_OP_FLOAT, KEY_WIDGET_TIP,
@@ -72,6 +105,7 @@ public final class TamerConfig {
         KEY_MINE_SIGNIN, KEY_MINE_SAFETY, KEY_MINE_CLEAN, KEY_MINE_SERVICES,
         KEY_MINE_SLIDE, KEY_MINE_FEED, KEY_SEARCH_FEED, KEY_UPDATE_FEED,
         KEY_DETAIL_REC, KEY_SEARCH_AD_BOOTH, KEY_SEARCH_MUST,
+        KEY_HEALTH_GATE,
     };
 
     /** 各页面开关对应的 Activity 类名列表 */
@@ -115,10 +149,190 @@ public final class TamerConfig {
 
     private final android.content.SharedPreferences sp;
 
+    /**
+     * Provider 通道覆盖层（最高优先级）：宿主进程启动后，ConfigRelay 在宿主
+     * Context 就绪时经 refreshFromProvider 拉权威 SP（含 conf_gen），代次新于
+     * 本进程已用配置则整体覆盖 conf 文件通道的陈旧值。文件通道（host-conf/
+     * files-conf）是"市场自启时"的快照，Provider 是"此刻"的实时值，后者胜。
+     */
+    private final java.util.Map<String, Boolean> override =
+            new java.util.concurrent.ConcurrentHashMap<String, Boolean>();
+    private final java.util.Map<String, String> overrideStr =
+            new java.util.concurrent.ConcurrentHashMap<String, String>();
+    private volatile long overrideGen = 0L;
+
+    /** 本进程最后一次成功加载的配置来源（排查"开关不生效"用，日志打印） */
+    public static volatile String LAST_CONF_SRC = "none";
+
     public TamerConfig(android.content.SharedPreferences sp) { this.sp = sp; }
 
     public boolean get(String key, boolean def) {
+        Boolean v = override.get(key);
+        if (v != null) return v.booleanValue();
         try { return sp.getBoolean(key, def); } catch (Throwable t) { return def; }
+    }
+
+    /** 字符串键（如 health_packages）：conf 文件只存布尔，故 Map 侧永远落默认值；
+     *  字符串仅经 XSharedPreferences / Provider 通道写入/读取。 */
+    public String getStr(String key, String def) {
+        String v = overrideStr.get(key);
+        if (v != null) return v;
+        try { return sp.getString(key, def); } catch (Throwable t) { return def; }
+    }
+
+    /** 当前生效的 Provider 覆盖代次（0 = 尚未收到 Provider 覆盖） */
+    public long overrideGen() { return overrideGen; }
+
+    /**
+     * 应用一次 Provider 拉取到的配置：整体替换覆盖层（不合并——SP 是权威全量
+     * 快照，合并会把 SP 里已删的键残留下来）。代次单调，旧代次永不覆盖新代次。
+     */
+    public void applyOverride(java.util.Map<String, Boolean> booleans,
+                              java.util.Map<String, String> strings, long gen) {
+        override.clear();
+        override.putAll(booleans);
+        overrideStr.clear();
+        if (strings != null) overrideStr.putAll(strings);
+        overrideGen = gen;
+    }
+
+    // ===== Provider 通道（无 root 主链路，v1.4.4，照抄 LineTamer v1.6.1）=====
+    /** 设置页 ConfigProvider 的权威 URI（Hook 端用它拉 SP） */
+    public static final String PROVIDER_URI = "content://" + MODULE_PKG + ".config/prefs";
+    private static final long PROVIDER_MIN_INTERVAL_MS = 10_000L;
+    private static final Object sProviderLock = new Object();
+    private static long sLastProviderPullAt = 0L;
+
+    /**
+     * 宿主 Context 就绪时经标准 ContentResolver IPC 拉设置页权威 SP（含
+     * conf_gen）。幂等 + 节流（10s）：市场进程内多处就绪回调只拉一次；拉取
+     * 失败静默回退到文件通道（host-conf 仍是有效兜底）。
+     */
+    public static void refreshFromProvider(android.content.Context ctx, TamerConfig cfg) {
+        if (ctx == null || cfg == null) return;
+        synchronized (sProviderLock) {
+            long now = System.currentTimeMillis();
+            if (now - sLastProviderPullAt < PROVIDER_MIN_INTERVAL_MS) return;
+            sLastProviderPullAt = now;
+        }
+        try {
+            // content:// URI 对只实现 openFile（返回 PFD）的 Provider，
+            // openInputStream 由框架把 PFD 包成流——跨应用 binder IPC，
+            // 不依赖 LSPosed 任何特性。
+            pullViaStream(ctx, cfg);
+        } catch (Throwable t) {
+            android.util.Log.i("HonorMarketTamer", "provider pull failed: " + t);
+        }
+    }
+
+    /**
+     * 运行中（warm）市场直读设置页权威 SP 并覆盖本进程配置（无 root 主链路，v1.4.6）。
+     * 与 refreshFromProvider 同款节流/代次协议，但读的是 SP 文件本身而非被封的
+     * Provider IPC：市场侧 XSharedPreferences 解析到 apexdata 重定向后真实路径，
+     * 设置页每次保存同步写 SP + chmod 644，故读到的是"此刻"最新配置。代次新则
+     * applyOverride（与所有 Blocker 共享同一 cfg 实例，即时生效、无需重启市场）。
+     * 每次重建 XSP（轻量），不跨调用缓存——apexdata uuid 路径由 LSPosed 实时解析。
+     */
+    public static void refreshFromModuleSp(TamerConfig cfg) {
+        if (cfg == null) return;
+        synchronized (sProviderLock) {
+            long now = System.currentTimeMillis();
+            if (now - sLastProviderPullAt < PROVIDER_MIN_INTERVAL_MS) return;
+            sLastProviderPullAt = now;
+        }
+        try {
+            de.robv.android.xposed.XSharedPreferences xsp =
+                    new de.robv.android.xposed.XSharedPreferences(MODULE_PKG, PREFS_NAME);
+            java.io.File xf = xsp.getFile();
+            if (xf == null || !xf.isFile() || !xf.canRead()) return;
+            java.io.InputStream in = new java.io.FileInputStream(xf);
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
+            in.close();
+            String xml = new String(buf.toByteArray(), "UTF-8");
+            java.util.Map<String, Object> parsed = parseSpXml(xml, PREFS_NAME);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Boolean> booleans =
+                    (java.util.Map<String, Boolean>) parsed.get("booleans");
+            long gen = (Long) parsed.get("gen");
+            if (booleans == null || booleans.isEmpty()) return;
+            if (gen > cfg.overrideGen()) {
+                cfg.applyOverride(booleans, null, gen);
+                LAST_CONF_SRC = "moduleSpLive(gen=" + gen + ")";
+                de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] moduleSp live override gen="
+                        + gen + " keys=" + booleans.size());
+            }
+        } catch (Throwable t) {
+            de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] refreshFromModuleSp failed: " + t);
+        }
+    }
+
+    /** openInputStream 读 Provider SP XML（binder IPC，跨应用标准通路） */
+    private static void pullViaStream(android.content.Context ctx, TamerConfig cfg)
+            throws Exception {
+        java.io.InputStream in = ctx.getContentResolver()
+                .openInputStream(android.net.Uri.parse(PROVIDER_URI));
+        if (in == null) {
+            android.util.Log.w("HonorMarketTamer", "provider stream null");
+            return;
+        }
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int n;
+        while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
+        in.close();
+        String xml = new String(buf.toByteArray(), "UTF-8");
+        java.util.Map<String, Object> parsed = parseSpXml(xml, PREFS_NAME);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Boolean> booleans =
+                (java.util.Map<String, Boolean>) parsed.get("booleans");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> strings =
+                (java.util.Map<String, String>) parsed.get("strings");
+        long gen = (Long) parsed.get("gen");
+        if (booleans == null || booleans.isEmpty()) return;
+        if (gen > cfg.overrideGen()) {
+            cfg.applyOverride(booleans, strings, gen);
+            LAST_CONF_SRC = "provider(gen=" + gen + ")";
+            de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] provider override applied gen="
+                    + gen + " keys=" + booleans.size());
+        }
+    }
+
+    /**
+     * 解析 SP XML（只取布尔键 + 字符串键 + conf_gen）。SP XML 形如：
+     *   <map><boolean name="master_enabled" value="true"/>...
+     *        <string name="health_packages">com.hihonor.health</string></map>
+     * conf_gen 是 long，XML 里以 <long> 存；老 SP（无 long）则无 conf_gen 键，
+     * 此时 gen 取 0（不会覆盖已有配置）。
+     */
+    public static java.util.Map<String, Object> parseSpXml(String xml, String name) {
+        java.util.Map<String, Boolean> booleans = new java.util.HashMap<String, Boolean>();
+        java.util.Map<String, String> strings = new java.util.HashMap<String, String>();
+        long gen = 0L;
+        if (xml != null) {
+            java.util.regex.Matcher mb = java.util.regex.Pattern
+                    .compile("<boolean name=\"([^\"]+)\" value=\"(true|false)\"")
+                    .matcher(xml);
+            while (mb.find()) booleans.put(mb.group(1), "true".equals(mb.group(2)));
+            java.util.regex.Matcher ms = java.util.regex.Pattern
+                    .compile("<string name=\"([^\"]+)\"[^>]*>([^<]*)</string>")
+                    .matcher(xml);
+            while (ms.find()) strings.put(ms.group(1), ms.group(2));
+            java.util.regex.Matcher mg = java.util.regex.Pattern
+                    .compile("<long name=\"" + KEY_CONF_GEN + "\" value=\"(\\d+)\"")
+                    .matcher(xml);
+            if (mg.find()) {
+                try { gen = Long.parseLong(mg.group(1)); } catch (Throwable ignored) {}
+            }
+        }
+        java.util.Map<String, Object> out = new java.util.HashMap<String, Object>();
+        out.put("booleans", booleans);
+        out.put("strings", strings);
+        out.put("gen", gen);
+        return out;
     }
 
     /** 默认值表：与 SettingsActivity 保持一致 */
@@ -145,9 +359,18 @@ public final class TamerConfig {
         }
     }
 
-    /** Hook 侧加载配置：conf 文件为最高优先级（设置页每次切换同步写入、无延迟），
-     *  其次 XSharedPreferences（lspd 异步同步可能滞后） */
+    /** Hook 侧加载配置（v1.4.6 无 root 主链路）：
+     *  ① 模块权威 SP 直读（市场侧 XSP 已解析到 apexdata 重定向后真实路径，设置页
+     *     每次保存同步写 SP + chmod 644）——最实时，且不依赖"市场被正确启动"，
+     *     不受 OEM smart-launch/snapshot 拦截 onCreate 的影响；
+     *  ② conf 文件（host-conf 等，兄弟项目旧链路，保留为 stock 设备/SP 不可读时兜底）；
+     *  ③ XSharedPreferences 兜底。
+     */
     public static TamerConfig loadForHook(de.robv.android.xposed.XSharedPreferences xsp) {
+        java.util.Map<String, Boolean> sp = readModuleSp(xsp);
+        if (sp != null) {
+            return new TamerConfig(new MapBackedPrefs(sp));
+        }
         java.util.Map<String, Boolean> m = readConfFile(xsp);
         if (m != null) {
             return new TamerConfig(new MapBackedPrefs(m));
@@ -156,13 +379,54 @@ public final class TamerConfig {
     }
 
     /**
-     * 候选顺序（v1.3.3 起调整）：自身目录两份由设置页随开关实时重写、永远最新，
-     * 放前面；/data/local/tmp 只有拿过 root 才会被写入且之后不再刷新，
-     * 排最前会让「撤权后继续拨开关」的设备读到陈旧配置，故降级为末位兜底。
+     * 直读设置页权威 SP（无 root 主链路，v1.4.6）。市场进程内的 XSharedPreferences
+     * 已解析到 apexdata 重定向后的真实路径（实机实测 xsp.getFile()=
+     * /data/misc/apexdata/{uuid}/prefs/com.tamer.honormarket/tamer_config.xml、
+     * canRead=true）；设置页每次拨开关同步写该 SP 并 chmod 644，故本方法读到的是
+     * "此刻"的最新配置。解析出布尔键即用之（含 conf_gen 但此处不依赖代次——SP 是
+     * 设置页唯一权威写入方，单调由写入侧保证）。不可读/解析为空则返回 null，交回
+     * readConfFile 兜底（stock 设备 SP 在常规路径、同样经 getFilePath chmod 可读）。
+     */
+    private static java.util.Map<String, Boolean> readModuleSp(
+            de.robv.android.xposed.XSharedPreferences xsp) {
+        try {
+            java.io.File xf = xsp.getFile();
+            if (xf == null || !xf.isFile() || !xf.canRead()) return null;
+            java.io.InputStream in = new java.io.FileInputStream(xf);
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
+            in.close();
+            String xml = new String(buf.toByteArray(), "UTF-8");
+            java.util.Map<String, Object> parsed = parseSpXml(xml, PREFS_NAME);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Boolean> booleans =
+                    (java.util.Map<String, Boolean>) parsed.get("booleans");
+            if (booleans == null || booleans.isEmpty()) return null;
+            LAST_CONF_SRC = "moduleSp(" + xf.getAbsolutePath() + ")";
+            de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] confSrc="
+                    + xf.getAbsolutePath() + " keys=" + booleans.size());
+            return booleans;
+        } catch (Throwable t) {
+            de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] readModuleSp failed: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * 候选顺序（v1.4.2 起调整，LineTamer v1.6.1 无 root 主链路）：
+     * ① 宿主 host-conf（市场自己 files/ 下，钩子从启动 extras 重建、每次启动最新）
+     * ② 模块自身 files/conf（设置页随开关实时重写）
+     * ③ apexdata prefs 同级 conf
+     * ④ /data/local/tmp/conf —— 纯开发期兜底（root 只在开发时用），运行时不再写它，
+     *    停写后永不刷新，必须垫底。
+     * 首个可读且非空者胜出；host-conf 的 #gen 行由写入侧保证单调，读侧无需比代次。
      */
     private static java.util.Map<String, Boolean> readConfFile(
             de.robv.android.xposed.XSharedPreferences xsp) {
         java.util.List<String> candidates = new java.util.ArrayList<String>();
+        candidates.add(HOST_CONF_DIR + "/" + HOST_CONF_NAME);
         candidates.add("/data/user/0/" + MODULE_PKG + "/files/" + CONF_NAME);
         try {
             java.io.File xf = xsp.getFile();
@@ -190,7 +454,12 @@ public final class TamerConfig {
                           "true".equals(raw));
                 }
                 br.close();
-                if (!m.isEmpty()) return m;
+                if (!m.isEmpty()) {
+                    LAST_CONF_SRC = "file(" + p + ")";
+                    de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] confSrc="
+                            + p + " keys=" + m.size());
+                    return m;
+                }
             } catch (Throwable ignored) {}
         }
         return null;
@@ -212,6 +481,7 @@ public final class TamerConfig {
         @Override public float getFloat(String key, float defValue) { throw new UnsupportedOperationException(); }
         @Override public java.util.Set<String> getStringSet(String key, java.util.Set<String> defValues) { throw new UnsupportedOperationException(); }
         @Override public boolean contains(String key) { return map.containsKey(key); }
+        @Override public java.io.File getFilePath() { return null; }
         @Override public void registerOnSharedPreferenceChangeListener(android.content.SharedPreferences.OnSharedPreferenceChangeListener listener) {}
         @Override public void unregisterOnSharedPreferenceChangeListener(android.content.SharedPreferences.OnSharedPreferenceChangeListener listener) {}
     }
@@ -232,6 +502,7 @@ public final class TamerConfig {
         @Override public float getFloat(String key, float defValue) { throw new UnsupportedOperationException(); }
         @Override public java.util.Set<String> getStringSet(String key, java.util.Set<String> defValues) { throw new UnsupportedOperationException(); }
         @Override public boolean contains(String key) { throw new UnsupportedOperationException(); }
+        @Override public java.io.File getFilePath() { return null; }
         @Override public void registerOnSharedPreferenceChangeListener(android.content.SharedPreferences.OnSharedPreferenceChangeListener listener) {}
         @Override public void unregisterOnSharedPreferenceChangeListener(android.content.SharedPreferences.OnSharedPreferenceChangeListener listener) {}
     }

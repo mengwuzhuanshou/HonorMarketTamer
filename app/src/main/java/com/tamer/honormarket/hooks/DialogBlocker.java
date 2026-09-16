@@ -15,6 +15,20 @@ public final class DialogBlocker {
         if (cfg.get(com.tamer.honormarket.TamerConfig.KEY_OP_DIALOG,
                     com.tamer.honormarket.TamerConfig.defaultValueOf(
                             com.tamer.honormarket.TamerConfig.KEY_OP_DIALOG))) {
+            // 【16.1.8.305 适配】运营弹窗显示入口从 i0 挪到 j0。
+            //  - 16.1.7 及以前：i0(3参) 是弹窗内容装配/显示路径；
+            //  - 16.1.8.305：i0 变成 i0(int,View)（2 参，点按上报+dismiss 路径），
+            //    显示入口是 j0(FragmentActivity,OperationVO,Runnable)（3 参，
+            //    MainFrameFragment.reShowOperationDialog / u2 调用，内部 a0(activity) 弹框）。
+            // 两版都按 3 参拦：老 i0(3) 与 新 j0(3)；新版 i0 已 2 参 → 老钩子自然落空。
+            HookUtil.tryHookFlex(cl, "com.hihonor.appmarket.operation.ui.OperationDialog",
+                    "j0", 3, new HookUtil.FlexCallback() {
+                        @Override
+                        public void fire(MethodHookParam param) {
+                            XposedBridge.log("[HonorMarketTamer] block OperationDialog.j0 (show)");
+                            param.setResult(null);
+                        }
+                    });
             HookUtil.tryHookFlex(cl, "com.hihonor.appmarket.operation.ui.OperationDialog",
                     "i0", 3, new HookUtil.FlexCallback() {
                         @Override

@@ -80,6 +80,14 @@ is harmless since the first two copies need no root. **Since v1.3.4 the root
 copy ranks LAST**: it is only written while root is granted and never refreshed
 afterwards, so ranking it first would freeze switches on devices that lost root.
 
+v1.4.6 起新增 **apexdata SP 直读**无 root 主链路（见 #16）：宿主直读模块自己的
+权威 SP，冷/热即时生效、不依赖被正确拉起；上述三副本（含 root 兜底）降为
+SP 不可读时的兜底。
+
+Since v1.4.6 a **no-launch, no-root main channel** reads the module's own SP
+directly from the host process (see #16); the three copies above (incl. the root
+copy) now rank as fallback for when the SP is unreadable.
+
 ## 8. “请求源头拦截”模式 / Kill-the-request-at-source pattern
 
 与其 hook UI 隐藏加载态，不如在请求发起处直接 `setResult(合成失败响应)`：
@@ -170,3 +178,48 @@ explicit encoding/errors). Also: `java -jar` on the jadx fat jar launches the GU
 (that is its Main-Class); run headless with
 `java -cp jadx-*.jar jadx.cli.JadxCLI` and use `--single-class` for surgical
 decompiles.
+
+## 16. apexdata SP 直读：无拉起、无 root 的配置主链路 / apexdata SP direct-read: no-launch, no-root main channel
+
+OEM 会封跨应用 Provider / URI 授权 / FUSE；通用引擎的「跨应用组件启动」通路在本机
+（Honor MagicOS / Android 16）上还会被 **smart-launch / cached-splash** 间歇击穿——
+设置页（异 uid）拉起市场时，OEM 直接喂缓存开屏快照、**跳过 Splash 的 onCreate**，
+启动 extras 无人接收、host-conf 不刷新（shell 的 `am start` 走 uid 2000 不受影响，
+模块 app 拉起却中招）。v1.4.6 改为**宿主直读模块自己的权威 SP**：LSPosed v2 把模块
+SP 重定向到 apexdata（**路径重定向、非 bind mount**），叶子文件 660、目录链 711；
+设置页把叶子 `chmod 644` 后，市场（异 uid）冷启动与 onResume 都能直读「此刻」最新
+配置，不依赖被正确拉起、不依赖 root。
+
+**写入侧（设置页 / 模块进程）**：
+- 解析 SP 真实物理路径：① interface `getFilePath()`（stock / 较新 framework 有；
+  OEM 无 → `NoSuchMethodError`，被吞）；② **反射 `SharedPreferencesImpl` 私有字段
+  `mFile`**（OEM 框架该接口无 getFilePath，真 SP 对象是 `SharedPreferencesImpl`、
+  `mFile` 指向 apexdata 真实路径）；③ 常规 `dataDir/shared_prefs/<name>.xml` 兜底。
+- 拨开关 = **同步 `commit()`（非异步 `apply()`）**，布尔值 + `conf_gen` 并入同一次
+  commit，落盘先于随后 `chmod 644`。根因：`apply()` 异步刷盘会在 chmod 之后把文件
+  权限重置回 660，异 uid 读不到。
+- 投递环节**只读 gen、不再写 SP**（`confGen(sp)`），避免 chmod 后又一次异步 SP 写
+  重置权限。
+- `onCreate` 也 chmod 一次（覆盖新装机 SP 仍为默认 660 的场景）。
+
+**读取侧（市场进程）**：
+- 冷启动：`new XSharedPreferences(MODULE_PKG, PREFS_NAME).getFile()` → LSPosed 实时
+  解析出 apexdata 重定向后真实路径 → `canRead` 则 `FileInputStream` 直读 → 解析 SP
+  XML（布尔键 + conf_gen）→ 作为 `loadForHook` **最高优先级**源（#7 的 conf 副本降
+  为兜底）。
+- 热（warm）：钩 `android.app.Activity.onResume`（任何 Activity 进前台都触发），节流
+  （10s）重读 SP、比 `conf_gen`，新则 `applyOverride` 热替换内存配置——开关即时生效、
+  无需重启市场。
+
+**坑**：
+- `getFilePath()` 不在 OEM 的 `SharedPreferences` 接口上（`NoSuchMethodError`）→ 反射
+  `mFile`。build-stub 给接口声明 `getFilePath()` 只为**编译**通过；运行时 OEM 上会抛，
+  必须 try/catch 吞掉再走反射。
+- apexdata 可能有**多个 uuid 目录**（一个陈旧属主 + 一个当前属主）——路径必须经 XSP
+  **实时解析**，勿硬编码 uuid。
+- SP 只存**用户拨过的键**（+ conf_gen），其余键保持默认。直读（拨过的键 + 默认值表
+  补齐）= 用户真实意图，**不要假设 SP 含全部键**。
+- 布尔仍须严格 `true/false`（同 #7 纪律）；`conf_gen` 是 `<long>`，无 long 的老 SP
+  无此键、gen 取 0（不会误覆盖已有配置）。
+- 组件启动通道与 Provider 通道**保留为 stock / 冗余兜底**：SP 不可读时回退。三者并存、
+  互不冲突。本手法已抽象为跨项目共享的通用配置引擎（见共享引擎踩坑文档 #19）。

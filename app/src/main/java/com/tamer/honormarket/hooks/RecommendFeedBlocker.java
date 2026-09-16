@@ -11,9 +11,10 @@ import de.robv.android.xposed.XposedHelpers;
  * 推荐流屏蔽（三个页面，各自独立开关）：
  *
  * 1. 「我的」页：
- *  - 请求源头 MarketManageViewModel#o(...)（realRequestRecommend R232 唯一出口）直接吞掉
- *    → 零流量、无响应循环、无加载闪烁；
- *  - 缓存路径走 V1：置空 resp 后补调 M1(null,null,true,false,false) 收尾加载占位；
+ *  - 请求源头 MarketManageViewModel#o(...)（老桥）/ #n(...)（16.1.8.301 起真实请求核心
+ *    R232 唯一网络出口）直接吞掉 → 零流量、无响应循环、无加载闪烁；
+ *  - 响应汇聚点（方法名随版本漂移 V1→W1→Z1，均 4 参 BaseResp）：置空 assemblyList 的
+ *    成功空响应，覆盖网络 + 缓存两条路径（缓存里的旧豆包/百度行也不渲染）；
  *  - 残留「正在加载」类占位文案由 MineSectionBlocker 的页面扫描隐藏。
  *
  * 2. 搜索发现页（点搜索框进入）：
@@ -94,8 +95,8 @@ public final class RecommendFeedBlocker {
         if (sMineFeed) {
             hookMineReq(cl);       // 老：o(...) 请求桥（16.1.8 起已降级为合成桥，保留双保险）
             hookMineReqCore(cl);   // 新：n(...) 真实请求核心（16.1.8.301 R232 唯一网络出口）
-            hookMine(cl);          // 老：V1(resp,z,z2,z3) 缓存路径（16.1.8 起已改名 W1，保留存档）
-            hookMineResp(cl);      // 新：W1(BaseResp,z,z2,z3) 响应汇聚点（网络+缓存双路收口）
+            hookMine(cl);          // 老：V1(resp,z,z2,z3) 缓存路径（16.1.8 起改名，保留存档）
+            hookMineResp(cl);      // 响应汇聚点 Z1/W1/V1（4 参 BaseResp，16.1.8.305 真身=Z1）
         }
         if (sSearchFeed) {
             hookSearchSource(cl);
@@ -179,35 +180,35 @@ public final class RecommendFeedBlocker {
     }
 
     /**
-     * 【16.1.8.301 适配】「我的」页推荐响应汇聚点：
-     * MarketManageFragment#W1(BaseResp,boolean,boolean,boolean)（原名 V1，16.1.8 改名）。
+     * 【16.1.8.305 适配】「我的」页推荐响应汇聚点：
+     * MarketManageFragment#Z1(BaseResp,boolean,boolean,boolean)。
      *
-     * 网络响应（observer → handleRecommendResponse → W1(resp,true,z,true)）与
-     * 缓存路径（loadCacheRecommendData → MineModuleKt.z().b("R232") 读 R232 缓存
-     * → W1(cached,false,false,false)）【都汇聚到 W1】，内部经 Y1 → N1 把
-     * BaseResp.getData().getAssemblyList() 喂进 RecommendAdapter。
+     * 汇聚点方法名随版本漂移：V1(16.1.7 及以前) → W1(16.1.8.301) → Z1(16.1.8.305)。
+     * 三个版本里它都是【唯一收口】：网络响应（observer$e#invoke → H1 → G1 → X1）与
+     * 缓存路径（loadCacheRecommendData$1 → Y1 → X1）都最终进它，内部读
+     * BaseResp.getData().getAssemblyList() 并喂 RecommendAdapter#s1 / jb4#w。
+     * 16.1.8.305 里 W1 只剩 W1(int)（gw#a 调用的无关方法）、V1 只剩 V1(boolean)，
+     * 真身已挪到 Z1——按 4 参 BaseResp 签名锚定即可跨版本稳定命中真 sink。
      *
-     * 老钩子锚的 V1(resp,z,z2,z3) 在 16.1.8 已不存在（V1 只剩 V1(int)），故缓存里的
-     * 豆包/百度旧行仍会先渲染出来。
-     *
-     * 关键手法——【置空数据而非吞响应】（沿用本项目坑 #9 哲学：推荐流拦截统一"置空响应
-     * 数据"而非拦方法返回，让 App 自己走无数据清理路径，不留悬空加载/错误态）：
-     *  - 把 args[0](BaseResp) 换成一个 errorCode=0、data=空 assemblyList 的【成功空响应】，
-     *    使 Y1 走 "assemblyList2.isEmpty() → arrayListD=null" 的空数据分支，feed 整段干净
-     *    收起；若直接置 null 会落进 App 的 error 分支，残留"加载失败，点击重试"占位——不可取。
-     *  - 不再补调 M1()：16.1.8 起 M1()=f1(null)/Z0()，喂 null 反而把适配器打进 error 态，
-     *    正是"加载失败"的元凶；空成功响应已让 App 自行收尾，无需补刀。
+     * 关键手法——【置空数据而非吞响应】（沿用本项目坑 #9 哲学）：把 args[0](BaseResp)
+     * 换成 errorCode=0、data=空 assemblyList 的【成功空响应】，使 sink 走
+     * "assemblyList.isEmpty() → 空数据分支"，feed 整段干净收起；若直接置 null 会落进
+     * App 的 error 分支，残留"加载失败，点击重试"占位——不可取。
      * before-hook 只替换入参、不改控制流，幂等、无回调、不死循环。
+     *
+     * 老 W1/V1 钩子原样保留（新版下 4 参签名不匹配 → 自然落空，无害存档；老市场版本兼容）。
      */
     private static void hookMineResp(final ClassLoader cl) {
         try {
             Class<?> clazz = XposedHelpers.findClass(MINE_FRAG, cl);
-            XposedBridge.hookAllMethods(clazz, "W1", new XC_MethodHook() {
+            // 汇聚点方法名跨版本漂移：Z1(16.1.8.305) 为主，W1/V1 存档兜底老版本。
+            // 回调按 4 参 BaseResp 过滤，只有真 sink 命中，同名无关方法（W1(int)/V1(boolean)）落空。
+            final XC_MethodHook sinkHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
-                        // W1(BaseResp, boolean, boolean, boolean) = 4 参
-                        if (param.args.length != 4) {
+                        // Z1/W1/V1(BaseResp, boolean, boolean, boolean) = 4 参
+                        if (param.args.length != 4 || param.args[0] == null) {
                             return;
                         }
                         Object empty = emptySuccessResp(cl);
@@ -219,14 +220,19 @@ public final class RecommendFeedBlocker {
                         }
                         int n = sW1Hit.incrementAndGet();
                         if (n <= 10 || n % 100 == 0) {
-                            XposedBridge.log(TAG + "mine-feed W1 resp->empty #" + n);
+                            XposedBridge.log(TAG + "mine-feed resp-sink(Z1) resp->empty #"
+                                    + n);
                         }
                     } catch (Throwable t) {
-                        XposedBridge.log(TAG + "mine-feed W1 err: " + t);
+                        XposedBridge.log(TAG + "mine-feed resp-sink err: " + t);
                     }
                 }
-            });
-            XposedBridge.log(TAG + "RecommendFeedBlocker armed on MarketManageFragment#W1 (resp sink)");
+            };
+            XposedBridge.hookAllMethods(clazz, "Z1", sinkHook);   // 16.1.8.305 真 sink
+            XposedBridge.hookAllMethods(clazz, "W1", sinkHook);   // 16.1.8.301 存档
+            XposedBridge.hookAllMethods(clazz, "V1", sinkHook);   // 16.1.7 及以前存档
+            XposedBridge.log(TAG + "RecommendFeedBlocker armed on MarketManageFragment "
+                    + "Z1/W1/V1 (resp sink, 4-arg BaseResp)");
         } catch (Throwable t) {
             XposedBridge.log(TAG + "RecommendFeedBlocker mine-resp FAILED: " + t);
         }
@@ -385,11 +391,17 @@ public final class RecommendFeedBlocker {
         }
     }
 
-    /** 搜索发现页兜底：拦渲染适配器唯一数据入口 w1(List,boolean)，null 安全 */
+    /**
+     * 搜索发现页兜底：拦渲染适配器唯一数据入口。方法名随版本漂移：
+     * w1(List,boolean)(16.1.7 及以前) → y1(List,boolean)(16.1.8.305)。
+     * y1 被 SearchActivationFragment#A1 / requestLoadMoreData / l0 调用，是卡片列表唯一入口，
+     * before-hook 把 args[0] 置 null（空安全，App 自身 isNullOrEmpty 分支收尾）。
+     * 老 w1 钩子原样保留（新版 w1 已变成 0 参无关方法 → 2 参过滤自然落空，无害存档）。
+     */
     private static void hookSearchAdapter(final ClassLoader cl) {
         try {
             Class<?> adapter = XposedHelpers.findClass(SEARCH_ADAPTER, cl);
-            XposedBridge.hookAllMethods(adapter, "w1", new XC_MethodHook() {
+            final XC_MethodHook listHook = new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
@@ -397,29 +409,38 @@ public final class RecommendFeedBlocker {
                             param.args[0] = null;
                             int n = sSearchBlocked.incrementAndGet();
                             if (n <= 5 || n % 100 == 0) {
-                                XposedBridge.log(TAG + "feed-block search w1 #" + n);
+                                XposedBridge.log(TAG + "feed-block search-adapter list->null #"
+                                        + n);
                             }
                         }
                     } catch (Throwable t) {
-                        XposedBridge.log(TAG + "feed-block search-w1 err: " + t);
+                        XposedBridge.log(TAG + "feed-block search-adapter err: " + t);
                     }
                 }
-            });
-            XposedBridge.log(TAG + "RecommendFeedBlocker armed on AssSearchActivationAdapter#w1");
+            };
+            XposedBridge.hookAllMethods(adapter, "y1", listHook);   // 16.1.8.305 数据入口
+            XposedBridge.hookAllMethods(adapter, "w1", listHook);   // 16.1.7 及以前存档
+            XposedBridge.log(TAG + "RecommendFeedBlocker armed on AssSearchActivationAdapter "
+                    + "y1/w1 (list entry, 2-arg)");
         } catch (Throwable t) {
             XposedBridge.log(TAG + "RecommendFeedBlocker search-adapter FAILED: " + t);
         }
     }
 
     /**
-     * 【v1.3.0】应用详情页推荐请求入口 AppDetailRecommendViewModel#h(11参) 直接吞。
+     * 【v1.3.0】应用详情页推荐请求入口 AppDetailRecommendViewModel#h 直接吞。
+     * h 是 MultiAssemblyDataReq（setRecommendCode）→ BaseViewModel.request 的唯一出口。
+     * 参数个数随版本漂移：11 参(16.1.7 及以前) → 12 参(16.1.8.305)——Kotlin 新增了一个
+     * 默认参。这里对 11/12 参都拦，跨版本稳定命中真请求入口；静态合成桥 i(...)（多一参
+     * this）不在此列，由 h 收口即可。
      * 覆盖调用方：主详情页 D0 尾部 / 介绍 Tab W0() / 半屏 AppDetailRecommendFragment
      * （刷新+加载更多）/ 分发详情子类 / 签到详情 SignDetailActivity。
      * 返回 Job 在各调用方均按可空处理或直接丢弃，setResult(null) 安全。
      *
      * 吞请求后向该 VM 的 d() LiveData 补发 Success(BaseResp{code=0,data=null})：
-     * 所有消费方（介绍页 onSuccess / 推荐页签 U0 / 分发页 / 签到页）都有原生的
-     * data==null 空态收尾分支（finishRefresh/空视图/报告），不会残留“正在加载”。
+     * d() 继承自 CommonListViewModel（16.1.8.305 里 VM 自身不再显式声明 d，但实例上仍可
+     * 反射调到），所有消费方（介绍页 onSuccess / 推荐页签 / 分发页 / 签到页）都有原生
+     * data==null 空态收尾分支，不会残留“正在加载”。
      */
     private static void hookDetailRecommend(final ClassLoader cl) {
         try {
@@ -428,7 +449,8 @@ public final class RecommendFeedBlocker {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
-                        if (param.args.length != 11) {
+                        // h 请求入口：16.1.7 及以前 11 参、16.1.8.305 起 12 参，两版都拦
+                        if (param.args.length != 11 && param.args.length != 12) {
                             return;
                         }
                         param.setResult(null);

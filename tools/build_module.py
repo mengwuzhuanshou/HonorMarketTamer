@@ -62,8 +62,8 @@ APP_SRC = os.path.join(PROJ, "app", "src", "main", "java")
 ASSETS = os.path.join(PROJ, "app", "src", "main", "assets")
 
 PKG = "com.tamer.honormarket"
-VERSION_NAME = "1.3.9"
-VERSION_CODE = 30
+VERSION_NAME = "1.4.6"
+VERSION_CODE = 37
 
 # 应用图标：中性购物袋图标（tools/icon/ic_launcher.png，无品牌素材）
 ICON_PNG = os.path.join(PROJ, "tools", "icon", "ic_launcher.png")
@@ -78,17 +78,31 @@ import axml_writer  # noqa: E402
 import arsc_builder  # noqa: E402
 
 
+def _decode(b):
+    # javac/dx 在中文 Windows 下用 GBK 输出注释与错误；按 GBK 解码失败再回退 UTF-8，
+    # 两者都不行时用替换符，绝不让解码异常吞掉真实构建结果。
+    if not b:
+        return ""
+    for enc in ("utf-8", "gbk"):
+        try:
+            return b.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return b.decode("utf-8", errors="replace")
+
+
 def run(cmd, desc):
     print("==>", desc)
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    p = subprocess.run(cmd, capture_output=True)
+    out, err = _decode(p.stdout), _decode(p.stderr)
     if p.returncode != 0:
-        print(p.stdout[-4000:])
-        print(p.stderr[-4000:])
+        print(out[-4000:])
+        print(err[-4000:])
         raise SystemExit("FAILED: " + desc)
-    if p.stdout.strip():
-        print(p.stdout.strip()[-1500:])
-    if p.stderr.strip():
-        print(p.stderr.strip()[-1500:])
+    if out.strip():
+        print(out.strip()[-1500:])
+    if err.strip():
+        print(err.strip()[-1500:])
 
 
 def java_sources(base):
@@ -133,6 +147,17 @@ def main():
             "launcher": True,
             "module_settings": True,
         }],
+        # v1.4.4 起：无 root 配置通道。市场进程（宿主）经标准 ContentResolver
+        # IPC 读本 Provider 的 openFile → 模块权威 SP（tamer_config.xml）。
+        # exported=True + 设置页 grantUriPermission 双保险（OEM 强制
+        # exported=false 时走运行时授权）。照抄 LineTamer v1.6.1。
+        providers=[{
+            "name": PKG + ".ConfigProvider",
+            "authorities": PKG + ".config",
+            "exported": True,
+            # 允许 grantUriPermission()（缺了会 SecurityException）
+            "grantUriPermissions": True,
+        }],
         meta_datas=[
             # 类型必须与标准模块一致：LSPosed 用 getBoolean/getInt 读取
             ("xposedmodule", ("bool", True)),
@@ -141,7 +166,9 @@ def main():
              u"\u4fdd\u7559\u641c\u7d22\u4e0e\u66f4\u65b0\uff0c\u5176\u4f59"
              u"\u529f\u80fd\u53ef\u5c4f\u853d"),
             ("xposedminversion", ("int", 93)),
-            ("xposedscope", "com.hihonor.appmarket"),
+            # 双作用域：市场（主）+ 运动健康（传感器闸门，默认关）。逗号分隔，
+            # LSPosed 会据此渲染两个可勾选的作用域条目。
+            ("xposedscope", "com.hihonor.appmarket,com.hihonor.health"),
         ],
         allow_backup=False,
         # 图标引用 @drawable/ic_launcher = 0x7f020000（见 arsc_builder）

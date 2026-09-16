@@ -111,6 +111,23 @@ public final class SplashAdBlocker {
                 param.setResult(null);
             }
         });
+
+        // ===== 16.1.8.305 适配 =====
+        // 8) 视图侧工厂再次换位置/换名：ad splash 视图工厂从混淆短名 kg7 挪到
+        //    全名类 com.hihonor.appmarket.main.splash.utils.a，方法名 o(Activity,SplashBase,a)
+        //    → AdSplashScreen（dex 调用图实证：全 dex 里唯一返回 AdSplashScreen 的工厂）。
+        //    它是 cached/v3/event 三条路径共同的视图终点；置 null 后应用按「无广告」收尾。
+        //    钩子 5（v3.a#d 数据源头）仍是主拦截，本钩子为视图侧兜底。
+        //    老版本无此类/方法时 hookAll 自然落空，不误伤。
+        HookUtil.tryHookFlex(cl,
+                "com.hihonor.appmarket.main.splash.utils.a", "o", 3,
+                new HookUtil.FlexCallback() {
+                    @Override
+                    public void fire(MethodHookParam param) {
+                        XposedBridge.log("[HonorMarketTamer] splash view utils.a.o -> null");
+                        param.setResult(null);
+                    }
+                });
     }
 
     private SplashAdBlocker() {}
