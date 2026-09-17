@@ -223,3 +223,12 @@ SP 重定向到 apexdata（**路径重定向、非 bind mount**），叶子文�
   无此键、gen 取 0（不会误覆盖已有配置）。
 - 组件启动通道与 Provider 通道**保留为 stock / 冗余兜底**：SP 不可读时回退。三者并存、
   互不冲突。本手法已抽象为跨项目共享的通用配置引擎（见共享引擎踩坑文档 #19）。
+- **读取侧对 XSP 的依赖仅限路径解析**（`XSharedPreferences.getFile()` 解析 apexdata 真实
+  路径），值不经 XSP（直读文件）。但 `getFile()` 同属 XSP 类，LSPosed v2.2.0 标记废弃、
+  v2.3.0 移除；apexdata 顶层 711、宿主异 uid 枚举不了 uuid，无 XSP 则无法定位路径，故
+  本主链路**仅在 LSPosed < 2.3.0 生效**。读取侧统一走 `safeXsp()`（吞 CNFE 返回 null）兜底，
+  XSP 缺席时优雅降级到 host-conf / conf 文件链路，不崩钩子（详见共享引擎踩坑文档 #19）。
+- **build-stub 方法签名必须与真实框架逐字一致（含返回类型）**：v1.4.7 前本模块独立桩把
+  `Context.registerReceiver` 写成返回 `void`，真实框架返回 `Intent`，导致健康闸门在
+  DaemonService 注册亮/灭屏接收器时 `NoSuchMethodError`、每 5s 重试刷屏。已对齐共享桩改回
+  `Intent`（详见共享引擎踩坑文档 #20）。

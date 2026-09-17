@@ -38,7 +38,8 @@ public class MainHook implements IXposedHookLoadPackage {
         // 在目标健康进程内收 SensorManager 注册口：熄屏拒注册/注销已注册会话，
         // 亮屏按原参数重放（详见 HealthSensorGate）。移植自 QQTamer，逻辑不变。
         if (!TamerConfig.TARGET_PKG.equals(lpp.packageName)) {
-            XSharedPreferences hxsp = new XSharedPreferences(TamerConfig.MODULE_PKG, TamerConfig.PREFS_NAME);
+            // safeXsp：LSPosed 2.3.0+ 移除 XSP 时返回 null（降级 conf 文件兜底），不崩钩子。
+            XSharedPreferences hxsp = TamerConfig.safeXsp();
             final TamerConfig hcfg = TamerConfig.loadForHook(hxsp);
             if (hcfg.get(TamerConfig.KEY_MASTER, true)
                     && hcfg.get(TamerConfig.KEY_HEALTH_GATE, false)) {
@@ -56,7 +57,8 @@ public class MainHook implements IXposedHookLoadPackage {
             return;
         }
         writeAliveMarker();
-        XSharedPreferences xsp = new XSharedPreferences(TamerConfig.MODULE_PKG, TamerConfig.PREFS_NAME);
+        // safeXsp：LSPosed 2.3.0+ 移除 XSP 时返回 null（apexdata 直读降级 conf 文件兜底）。
+        XSharedPreferences xsp = TamerConfig.safeXsp();
         TamerConfig cfg = TamerConfig.loadForHook(xsp);
 
         // 配置中继（无 root 主链路）：常驻安装、不受总开关门控——master 当前

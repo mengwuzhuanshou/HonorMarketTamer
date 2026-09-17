@@ -57,6 +57,21 @@ settings UI carries an English subtitle.
 3. 设置入口：LSPosed 模块详情页，或桌面「荣耀市场净化」图标。
    Open settings from the LSPosed module page, or the launcher icon.
 
+**作用域说明 / Scope note**
+
+- 主功能（市场净化）只需要勾选「荣耀应用市场」（`com.hihonor.appmarket`）。
+  The core (market cleanup) only needs the "Honor App Market" scope
+  (`com.hihonor.appmarket`).
+- 「运动健康传感器闸门」（默认关闭）需要额外勾选「荣耀运动健康」
+  （`com.hihonor.health`）作用域，并在设置页打开该开关。该闸门只在健康 app 进程内
+  拦自己的传感器注册，**无需**勾选 iaware、ha ware（awareness）或「系统组件」
+  ——桌面步数卡片的中枢硬件在熄屏期继续累计，熄屏停采不丢数。
+  The health-sensor gate (off by default) additionally needs the "Honor Health"
+  scope (`com.hihonor.health`) plus the switch turned on in settings. It only
+  intercepts the health app's own sensor registrations inside that process, so the
+  iaware / ha ware (awareness) / "system components" scopes are **not** required —
+  the step-count hub keeps accumulating in hardware while the screen is off.
+
 ### 权限说明 / Permissions note
 
 模块日常运行（Hook 过程）不执行任何 root 操作。仅在设置页保存开关时会尝试请求 root

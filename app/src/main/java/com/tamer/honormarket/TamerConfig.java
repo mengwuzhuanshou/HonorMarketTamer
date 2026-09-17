@@ -42,6 +42,31 @@ public final class TamerConfig {
         try { return sp.getLong(KEY_CONF_GEN, 0L); } catch (Throwable t) { return 0L; }
     }
 
+    /**
+     * 安全创建 XSP（v1.4.7 兜底）：LSPosed v2.2.0 标记 XSharedPreferences 弃用、
+     * v2.3.0 移除（见共享引擎踩坑文档 #17）。移除后 `new XSharedPreferences` 抛
+     * ClassNotFoundException——此处吞掉返回 null，使 loadForHook / refreshFromModuleSp
+     * 优雅降级到 host-conf / conf 文件兜底链路，避免整个 handleLoadPackage 因 XSP 类
+     * 消失而崩溃、模块自灭。
+     * 注意：apexdata SP 直读主链路（readModuleSp / refreshFromModuleSp）依赖 XSP 的
+     * getFile() 解析 apexdata 真实路径（市场进程异 uid、apexdata 顶层 711 不可枚举，
+     * 无 XSP 则无法定位该路径）——故该主链路仅在 LSPosed < 2.3.0 生效；XSP 缺席时
+     * 自动回退 host-conf 通道（#16/#17 主链路）。日志只打一次（sXspWarned）。
+     */
+    private static boolean sXspWarned = false;
+    public static de.robv.android.xposed.XSharedPreferences safeXsp() {
+        try {
+            return new de.robv.android.xposed.XSharedPreferences(MODULE_PKG, PREFS_NAME);
+        } catch (Throwable t) {
+            if (!sXspWarned) {
+                sXspWarned = true;
+                de.robv.android.xposed.XposedBridge.log("[HonorMarketTamer] XSP unavailable "
+                        + "(LSPosed 2.3.0+ removed?), degrading to conf-file fallback: " + t);
+            }
+            return null;
+        }
+    }
+
     // ===== 总开关 =====
     public static final String KEY_MASTER = "master_enabled"; // 模块总开关
 
@@ -241,8 +266,10 @@ public final class TamerConfig {
             sLastProviderPullAt = now;
         }
         try {
-            de.robv.android.xposed.XSharedPreferences xsp =
-                    new de.robv.android.xposed.XSharedPreferences(MODULE_PKG, PREFS_NAME);
+            de.robv.android.xposed.XSharedPreferences xsp = safeXsp();
+            // XSP 被移除（LSPosed 2.3.0+）时 warm 直读主链路不可用：静默跳过（不每 10s
+            // 打错误日志），配置改由冷启动 conf 文件 / host-conf 兜底链路提供。
+            if (xsp == null) return;
             java.io.File xf = xsp.getFile();
             if (xf == null || !xf.isFile() || !xf.canRead()) return;
             java.io.InputStream in = new java.io.FileInputStream(xf);
@@ -375,6 +402,12 @@ public final class TamerConfig {
         if (m != null) {
             return new TamerConfig(new MapBackedPrefs(m));
         }
+        // XSP 被移除（xsp==null）且无 conf 文件：返回空表（全部默认值），避免持有 null 的
+        // XspBackedPrefs 在每次 get() 上 NPE 崩钩子（XspBackedPrefs.getBoolean 的 xsp 调用
+        // 不在 ensure() 的 try 内）。
+        if (xsp == null) {
+            return new TamerConfig(new MapBackedPrefs(new java.util.HashMap<String, Boolean>()));
+        }
         return new TamerConfig(new XspBackedPrefs(xsp));
     }
 
@@ -389,6 +422,7 @@ public final class TamerConfig {
      */
     private static java.util.Map<String, Boolean> readModuleSp(
             de.robv.android.xposed.XSharedPreferences xsp) {
+        if (xsp == null) return null; // XSP 被移除（LSPosed 2.3.0+）：直读主链路不可用，静默交回 conf 兜底
         try {
             java.io.File xf = xsp.getFile();
             if (xf == null || !xf.isFile() || !xf.canRead()) return null;

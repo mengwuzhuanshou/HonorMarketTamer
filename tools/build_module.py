@@ -62,8 +62,8 @@ APP_SRC = os.path.join(PROJ, "app", "src", "main", "java")
 ASSETS = os.path.join(PROJ, "app", "src", "main", "assets")
 
 PKG = "com.tamer.honormarket"
-VERSION_NAME = "1.4.6"
-VERSION_CODE = 37
+VERSION_NAME = "1.4.7"
+VERSION_CODE = 38
 
 # 应用图标：中性购物袋图标（tools/icon/ic_launcher.png，无品牌素材）
 ICON_PNG = os.path.join(PROJ, "tools", "icon", "ic_launcher.png")

@@ -10,7 +10,10 @@ public class Context {
     public String getPackageName() { return null; }
     public java.io.File getFilesDir() { return null; }
     public Object getSystemService(String name) { return null; }
-    public void registerReceiver(android.content.BroadcastReceiver receiver, android.content.IntentFilter filter) { }
+    // 真实框架 Context.registerReceiver(BroadcastReceiver, IntentFilter) 返回 Intent（非 void）——
+    // 桩若声明成 void，编译期匹配、运行期找不到 void 版本 → NoSuchMethodError（HealthSensorGate
+    // 注册亮/灭屏接收器每 5s 刷屏的根因）。对齐 common 共享桩。
+    public Intent registerReceiver(android.content.BroadcastReceiver receiver, android.content.IntentFilter filter) { return null; }
     public void startActivity(Intent intent) { }
     public PackageManager getPackageManager() { return null; }
     // Provider 通道（v1.4.4）：对宿主显式授权读配置 Provider（OEM 强制 exported=false 时
